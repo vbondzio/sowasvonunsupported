@@ -1,7 +1,7 @@
 function Remove-vNETdriver-wrapper {
     <#
     .SYNOPSIS
-        Runs RemoveOldVNetDriver.ps1 on all powered on Windows VMs and report back whether they have to be rebooted
+        Runs RemoveOldVNetDriver.ps1 on all powered on Windows VMs and report back whether they have to be rebooted.
     .DESCRIPTION
         Gets some basic VM information and tries to invoke the script from https://kb.vmware.com/s/article/78016 to disable the old vNet driver. Reports back which VMs have to be restarted
     .NOTES
@@ -9,11 +9,11 @@ function Remove-vNETdriver-wrapper {
         GitHub:     https://github.com/vbondzio/sowasvonunsupported/blob/master/Remove-vNETdriver-wrapper.ps1
         Liability:  Absolutely none, I didn't even fully test this for all possible returns.
     .PARAMETER ClusterName
-        The cluster which contains the VMs you want to run the KB script against. Runs against all clusters / hosts if not specified. Doesn't support resourcepools (will only get VMs directly under the cluster).
+        The cluster which contains the VMs you want to run the KB script against. Runs against all clusters / hosts if not specified. Doesn't work with "VMname" parameter.
     .PARAMETER VMname
-        The VM you want to run the KB script against. Runs against all clusters / hosts if not specified. Doesn't work together with ClusterName parameter.
+        The VM you want to run the KB script against. Runs against all clusters / hosts if not specified. Doesn't work with "ClusterName" parameter.
     .PARAMETER Run
-        Will copy and run the removal script, ommiting will just get VM / Windows info
+        Will copy and run the removal script, ommiting will just get VM / Windows info.
     .EXAMPLE
         PS> Remove-vNETdriver-wrapper
     .EXAMPLE
@@ -23,14 +23,18 @@ function Remove-vNETdriver-wrapper {
     #>
 
     param(
-        [Parameter(Mandatory = $false)] [string]$ClusterName,
-        [Parameter(Mandatory = $false)] [string]$VMname,
+        [Parameter(Mandatory = $false, ParameterSetName="Cluster")] [string]$ClusterName,
+        [Parameter(Mandatory = $false, ParameterSetName="VM")] [string]$VMname,
         [Parameter(Mandatory = $false)] [switch]$Run
     )
 
+    $WarningPreference = "SilentlyContinue"
+
+    # "Read-Host -AsSecureString | ConvertFrom-SecureString". For testing, don't do that or replace it with proper credential management
+    # $windowsAdminCred = New-Object -TypeName System.Management.Automation.PSCredential -ArgumentList "Administrator", $(ConvertTo-SecureString 01000000d08c9ddf0115d1118c7a00c04fc297eb0100000065a759ea933507458a7c8c815bfe5a7d00000000020000000000106600000001000020000000cb5698d93780e0b39116c9b907dce8e2d258267aa509ce441096d8cf385d6b9e000000000e8000000002000020000000cbfa1208bd65471062c80db18d8b2fe1cc97b4b59e4b64d623f0af3755e7314120000000b458f2f2f79ec02fefd841486f4bbe174c2475760ca2388bd402d8ad5af638f540000000a276c12692530f281fb01a9beeca272cb027e85b22af1c5bf690612fbfad148d590459dd679c30aec49b82022e17bcccfb7ea9a73d2fec0bb463efc87c99062b)
     $windowsAdminCred = Get-Credential -Message "Enter Windows guest local admin credentials:"
     $guestRemoteFolder ="C:\Windows\Temp\"
-    
+
     $scriptName = "RemoveOldVNetDriver.ps1"
     $scriptOriginalMd5sum = "7D3F050F4A0C19182625E0B7F8C1278E"
     $localFolder ="c:\tmp\"
@@ -47,8 +51,8 @@ function Remove-vNETdriver-wrapper {
     }
 
     if($ClusterName) {
-        $cluster = Get-View -ViewType ClusterComputeResource -Property Name,ResourcePool -Filter @{"Name"="$ClusterName"}
-        $vms = Get-View ((Get-View $cluster.ResourcePool).VM) -Property Name,Summary.Vm,Runtime.PowerState,Config.GuestId,Guest
+        $cluster = Get-View -ViewType ClusterComputeResource -Property Name,Host -Filter @{"Name"="$ClusterName"}
+        $vms = Get-View ((Get-View $cluster.Host).VM) -Property Name,Summary.Vm,Runtime.PowerState,Config.GuestId,Guest
     } elseif ($VMname) {
         $vms = Get-View -ViewType VirtualMachine -Property Name,Summary.Vm,Runtime.PowerState,Config.GuestId,Guest -Filter @{"Name"="$VMname"}
     } else {
@@ -67,9 +71,17 @@ function Remove-vNETdriver-wrapper {
         $executionPolicy = "N/A"
         $fileCopied = "N/A"
         $scriptResult = "N/A"
-
-        $debugStats = Invoke-VMScript -vm $fullVmObject -ScriptText "[System.Environment]::OSVersion.Version.ToString(); (Get-Host).Version.ToString(); Get-ExecutionPolicy" -GuestCredential $windowsAdminCred -ScriptType Powershell
         
+        if ($debugStats) {
+            Clear-Variable $debugStats
+        }
+                
+        try {
+            $debugStats = Invoke-VMScript -vm $fullVmObject -ScriptText "[System.Environment]::OSVersion.Version.ToString(); (Get-Host).Version.ToString(); Get-ExecutionPolicy" -GuestCredential $windowsAdminCred -ScriptType Powershell -ErrorAction Stop
+        } catch {
+            $fileCopied = "login failed"
+        }
+
         if ($debugStats) {
             $debugStats = $debugStats.Split("`n")
             $windowsVersion = $debugStats[0]
@@ -77,10 +89,16 @@ function Remove-vNETdriver-wrapper {
             $executionPolicy = $debugStats[2]
         }
 
-        if ($Run) {
-            Copy-VMGuestFile -VM $fullVmObject -LocalToGuest -Source $localScriptToUpload -Destination $guestRemoteFolder -GuestCredential $windowsAdminCred
-            $fileCopied = $?
+        if ($Run -and $debugStats) {
             
+            try {
+                Copy-VMGuestFile -VM $fullVmObject -LocalToGuest -Source $localScriptToUpload -Destination $guestRemoteFolder -GuestCredential $windowsAdminCred -ErrorAction Stop
+                $fileCopied = $?
+            } catch {
+                $fileCopied = "file not copied"
+            }
+
+            # copy fail might have been file already uploaded, invoke anyhow            
             if ($?){
                 $scriptOutput = Invoke-VMScript -vm $fullVmObject -ScriptText "powershell.exe -ExecutionPolicy Bypass -File $guestRemoteFolder$scriptName" -GuestCredential $windowsAdminCred -ScriptType Powershell
 
@@ -115,5 +133,11 @@ function Remove-vNETdriver-wrapper {
         }
         $allResults += $currentResults
     }
+    # $allResults
     $allResults | Export-Csv -Path $localFolder$csvExportFilename -NoTypeInformation
+    Write-Host "Results of run written to: $localFolder$csvExportFilename"
+
+    if (!$allResults) {
+        Write-Host "No VM in scope (Guest type Windows and Powered on, in this vCenter / Cluster etc.)."
+    }
 }
