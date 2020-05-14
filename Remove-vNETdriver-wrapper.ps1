@@ -1,7 +1,7 @@
 function Remove-vNETdriver-wrapper {
     <#
     .SYNOPSIS
-        Runs RemoveOldVNetDriver.ps1 on all powered on Windows VMs and report back whether they have to be rebooted.
+        Runs RemoveOldVNetDriver.ps1 on all powered on Windows VMs and report back whether they have to be rebooted
     .DESCRIPTION
         Gets some basic VM information and tries to invoke the script from https://kb.vmware.com/s/article/78016 to disable the old vNet driver. Reports back which VMs have to be restarted
     .NOTES
@@ -12,6 +12,8 @@ function Remove-vNETdriver-wrapper {
         The cluster which contains the VMs you want to run the KB script against. Runs against all clusters / hosts if not specified. Doesn't work with "VMname" parameter.
     .PARAMETER VMname
         The VM you want to run the KB script against. Runs against all clusters / hosts if not specified. Doesn't work with "ClusterName" parameter.
+    .PARAMETER CsvFile
+        The path to a single column, headered "VMNames", CSV file containing unique VM names.
     .PARAMETER Run
         Will copy and run the removal script, ommiting will just get VM / Windows info.
     .EXAMPLE
@@ -25,6 +27,7 @@ function Remove-vNETdriver-wrapper {
     param(
         [Parameter(Mandatory = $false, ParameterSetName="Cluster")] [string]$ClusterName,
         [Parameter(Mandatory = $false, ParameterSetName="VM")] [string]$VMname,
+        [Parameter(Mandatory = $false, ParameterSetName="CSV")] [string]$CsvFile,
         [Parameter(Mandatory = $false)] [switch]$Run
     )
 
@@ -54,7 +57,10 @@ function Remove-vNETdriver-wrapper {
         $cluster = Get-View -ViewType ClusterComputeResource -Property Name,Host -Filter @{"Name"="$ClusterName"}
         $vms = Get-View ((Get-View $cluster.Host).VM) -Property Name,Summary.Vm,Runtime.PowerState,Config.GuestId,Guest
     } elseif ($VMname) {
-        $vms = Get-View -ViewType VirtualMachine -Property Name,Summary.Vm,Runtime.PowerState,Config.GuestId,Guest -Filter @{"Name"="$VMname"}
+        $vms = Get-VM -Name "$VMname" | Get-View
+    } elseif ($CsvFile) {
+        $csvVmNames = (Import-Csv -Path "$CsvFile").VMNames
+        $vms = Get-VM -Name $csvVmNames | Get-View
     } else {
         $vms = Get-View -ViewType VirtualMachine -Property Name,Summary.Vm,Runtime.PowerState,Config.GuestId,Guest
     }
@@ -63,9 +69,13 @@ function Remove-vNETdriver-wrapper {
     foreach ($vm in $vms | Where-Object {
             $_.Runtime.PowerState -eq "poweredOn" -and $_.Config.GuestId -like "windows*"
         } | Sort-Object -Property Name) {
-        
-        $fullVmObject = Get-VM -Id $vm.Summary.Vm
-        
+            
+        if (!$VMname -or !$CsvFile){
+            $fullVmObject = Get-VM -Id $vm.Summary.Vm
+        } else {
+            $fullVmObject = $vm
+        }
+
         $windowsVersion = "N/A"
         $psVersion = "N/A"
         $executionPolicy = "N/A"
@@ -133,11 +143,11 @@ function Remove-vNETdriver-wrapper {
         }
         $allResults += $currentResults
     }
-    # $allResults
-    $allResults | Export-Csv -Path $localFolder$csvExportFilename -NoTypeInformation
-    Write-Host "Results of run written to: $localFolder$csvExportFilename"
-
     if (!$allResults) {
         Write-Host "No VM in scope (Guest type Windows and Powered on, in this vCenter / Cluster etc.)."
+    } else {
+        # $allResults
+        $allResults | Export-Csv -Path $localFolder$csvExportFilename -NoTypeInformation
+        Write-Host "Results of run written to: $localFolder$csvExportFilename"
     }
 }
