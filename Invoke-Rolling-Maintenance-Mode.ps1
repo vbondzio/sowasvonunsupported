@@ -40,7 +40,7 @@ function Invoke-Rolling-Maintenance-Mode {
     $vsanDataMigrationDefault = "ensureObjectAccessibility"
     $mModeTimeoutSeconds = 600
     $mModeIntervalDelaySeconds = 300
-
+    
     $localFolder ="c:\tmp\"
     $runDateTime = (Get-Date).ToString('yyyy-MM-dd_HH-mm')
     $csvExportFilename = "Invoke-Rolling-Maintenance-Mode_export@$runDateTime.csv"
@@ -53,8 +53,8 @@ function Invoke-Rolling-Maintenance-Mode {
         $DrsEnabled = $cluster.Configuration.DrsConfig.Enabled
         $DrsLevel = $cluster.Configuration.DrsConfig.DefaultVmBehavior
         $vmotionRate = $cluster.Configuration.DrsConfig.VmotionRate
-        $DrsOptions = $cluster.Configuration.DrsConfig.Option
-        
+        $DrsOptions = $cluster.Configuration.DrsConfig.Option.ForEach({ '{0}={1}' -f $_.Key, $_.Value }) -join ' ' 
+
         $esxiHosts = Get-View $cluster.Host -Property Name,Runtime,Summary
        
         $esxiHostName = "N/A"
@@ -104,6 +104,7 @@ function Invoke-Rolling-Maintenance-Mode {
                     $esxiCycledMaintenanceMode = (Get-Date).ToString('yyyy-MM-dd:HH-mm-ss')
                 } 
             }
+
             $currentResults = [pscustomobject] @{
                 "Cluster" = $clusterName
                 "DRS Enabled" = $DrsEnabled
