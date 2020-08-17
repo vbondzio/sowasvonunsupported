@@ -3,11 +3,11 @@ function Invoke-Rolling-Maintenance-Mode {
     .SYNOPSIS
         Will cycle all hosts through enter and exit maintenance mode, vMotioning all (vMotionable) VMs at least once.
     .DESCRIPTION
-        Cycles all hosts in one or all clusters (default) into maintenance mode and out of it. By default, it will skip the remaining hosts in a cluster if enter maintenance mode fails / times out. This is for 6.5 and newer and doesn't have versioning for earlier releases.
+        Cycles all hosts in one or all clusters (default) into maintenance mode and out of it. By default, it will skip the remaining hosts in a cluster if enter maintenance mode fails / times out. It also "trails" every maintenance mode with a sleep for e.g. memory reclamation and migrations to settle. This is for 6.5 and newer and doesn't have versioning for earlier releases.
     .NOTES
         Author:     Valentin
         GitHub:     https://github.com/vbondzio/sowasvonunsupported/blob/master/Invoke-Rolling-Maintenance-Mode.ps1
-        Liability:  Absolutely none, I didn't even fully test this and its far from complete.
+        Liability:  Absolutely none, I didn't fully test this and its far from complete.
     .PARAMETER ClusterName
         The cluster in which all hosts will be MM cycled. Runs against all clusters / hosts in the vCenter if not specified. 
     .PARAMETER Continue
@@ -36,7 +36,8 @@ function Invoke-Rolling-Maintenance-Mode {
         Disconnect-VIServer -Confirm:$false
         Exit
     }
-
+    
+    # ensureObjectAccessibility, evacuateAllData, noAction
     $vsanDataMigrationDefault = "ensureObjectAccessibility"
     $mModeTimeoutSeconds = 600
     $mModeIntervalDelaySeconds = 300
@@ -48,11 +49,12 @@ function Invoke-Rolling-Maintenance-Mode {
     $allResults = @()
     foreach ($cluster in $clusters | Sort-Object -Property Name) {
 
-        # I take EnableVmBehaviorOverrides into account
+        # I won't take EnableVmBehaviorOverrides into account
         $clusterName = $cluster.Name
         $DrsEnabled = $cluster.Configuration.DrsConfig.Enabled
         $DrsLevel = $cluster.Configuration.DrsConfig.DefaultVmBehavior
         $vmotionRate = $cluster.Configuration.DrsConfig.VmotionRate
+        # flatten for csv export
         $DrsOptions = $cluster.Configuration.DrsConfig.Option.ForEach({ '{0}={1}' -f $_.Key, $_.Value }) -join ' ' 
 
         $esxiHosts = Get-View $cluster.Host -Property Name,Runtime,Summary
@@ -90,7 +92,6 @@ function Invoke-Rolling-Maintenance-Mode {
                     $esxiHost.EnterMaintenanceMode($timeout,$evacuatePoweredOffVms,$mModeSpec)
                 } catch {
                     $vmsNotMigrated = (Get-View -ViewType "VirtualMachine" -Property Name -Filter @{"Runtime.PowerState"="PoweredOn"} -SearchRoot $(Get-View -ViewType "HostSystem" -Filter @{"Name"="$esxiHostName"} -Property Name).MoRef).Name
-                    
                     if (!$Continue) {
                         Write-Error -Message "$esxiHostName failed to enter maintenance mode, skipping remaining cluster."
                         $breakLater = $true
@@ -98,6 +99,7 @@ function Invoke-Rolling-Maintenance-Mode {
                         Start-Sleep -Seconds $mModeIntervalDelaySeconds
                     }
                 } 
+                
                 if (!$error) {
                     $esxiHost.ExitMaintenanceMode($timeout)
                     Start-Sleep -Seconds $mModeIntervalDelaySeconds
