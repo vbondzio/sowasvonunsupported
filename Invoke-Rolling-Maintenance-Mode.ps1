@@ -36,18 +36,22 @@ function Invoke-Rolling-Maintenance-Mode {
         Disconnect-VIServer -Confirm:$false
         Exit
     }
-    
+
+    # "debug" logging: Continue, SilentlyContinue
+    $VerbosePreference = "Continue"
     # ensureObjectAccessibility, evacuateAllData, noAction
     $vsanDataMigrationDefault = "ensureObjectAccessibility"
     $mModeTimeoutSeconds = 600
     $mModeIntervalDelaySeconds = 300
-    
+
     $localFolder ="c:\tmp\"
     $runDateTime = (Get-Date).ToString('yyyy-MM-dd_HH-mm')
     $csvExportFilename = "Invoke-Rolling-Maintenance-Mode_export@$runDateTime.csv"
 
     $allResults = @()
     foreach ($cluster in $clusters | Sort-Object -Property Name) {
+
+        Write-Verbose "Cluster Start: $($cluster.Name)"
 
         # I won't take EnableVmBehaviorOverrides into account
         $clusterName = $cluster.Name
@@ -68,6 +72,8 @@ function Invoke-Rolling-Maintenance-Mode {
 
         foreach ($esxiHost in $esxiHosts | Sort-Object -Property Name) {
             
+            Write-Verbose "Host Start: $($esxiHost.Name)"
+
             $esxiHostName = $esxiHost.Name
             $esxiHostPowerState = $esxiHost.Runtime.PowerState
             $esxiHostConnectionState = $esxiHost.Runtime.ConnectionState
@@ -92,18 +98,23 @@ function Invoke-Rolling-Maintenance-Mode {
                     $esxiHost.EnterMaintenanceMode($timeout,$evacuatePoweredOffVms,$mModeSpec)
                 } catch {
                     $vmsNotMigrated = (Get-View -ViewType "VirtualMachine" -Property Name -Filter @{"Runtime.PowerState"="PoweredOn"} -SearchRoot $(Get-View -ViewType "HostSystem" -Filter @{"Name"="$esxiHostName"} -Property Name).MoRef).Name
+                    
+                    Write-Verbose "Host MM failed: $esxiHostName"
+                    
                     if (!$Continue) {
                         Write-Error -Message "$esxiHostName failed to enter maintenance mode, skipping remaining cluster."
                         $breakLater = $true
                     } else {
+                        Write-Verbose "Host MM failed, continue: $esxiHostName"
                         Start-Sleep -Seconds $mModeIntervalDelaySeconds
                     }
                 } 
-                
                 if (!$error) {
                     $esxiHost.ExitMaintenanceMode($timeout)
                     Start-Sleep -Seconds $mModeIntervalDelaySeconds
                     $esxiCycledMaintenanceMode = (Get-Date).ToString('yyyy-MM-dd:HH-mm-ss')
+
+                    Write-Verbose "Host Cycled: $esxiHostName"
                 } 
             }
 
@@ -121,9 +132,12 @@ function Invoke-Rolling-Maintenance-Mode {
             }
             $allResults += $currentResults
             if ($breakLater) {
+                Write-Verbose "Host Break: $esxiHostName"
                 Break
             }
+            Write-Verbose "Host End: $esxiHostName"
         }
+        Write-Verbose "Cluster End: $clusterName"
     }        
     $allResults | Format-Table -AutoSize
     $allResults | Export-Csv -Path $localFolder$csvExportFilename -NoTypeInformation
