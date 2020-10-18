@@ -127,7 +127,7 @@ function Get-PCPU-UsedUtil-Ratio {
             }
 
             $freqScalingDetected = $false
-            $actualRatio = [Math]::Round(($hostStats | Where-Object {$_.Util -gt $minPcpuUtilPct} | Measure-Object -Property Ratio -Average).Average, 2)
+            $actualRatio = [Math]::Round(($hostStats | Where-Object {$_.Util -ge $minPcpuUtilPct} | Measure-Object -Property Ratio -Average).Average, 2)
             Write-Verbose "Used / Util Ratio: $actualRatio"
                         
             if ($actualRatio -eq 0) {
