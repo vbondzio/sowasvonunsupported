@@ -12,7 +12,7 @@ function Get-PCPU-UsedUtil-Ratio {
     .PARAMETER EsxiHostName
         The host in which all PCPU ratios will be checked. The function runs against hosts in the vCenter if not specified. 
     .PARAMETER PerSocket
-        Will compare the ratio between sockets / evaluate sockets separately.
+        Will check each package separately and return the host as affect if at least one socket is below the target ratio.
     .PARAMETER ListAll
         Will list all instead of just affected hosts.
     .EXAMPLE
@@ -30,9 +30,9 @@ function Get-PCPU-UsedUtil-Ratio {
     )
 
     if($EsxiHostName) {
-        $esxiHosts = Get-View -ViewType HostSystem -Property Name,Hardware,Runtime -Filter @{"Name"="$EsxiHostName"}
+        $esxiHosts = Get-View -ViewType HostSystem -Property Name,Config.Option,Hardware,Runtime -Filter @{"Name"="$EsxiHostName"}
     } else {
-        $esxiHosts = Get-View -ViewType HostSystem -Property Name,Hardware,Runtime
+        $esxiHosts = Get-View -ViewType HostSystem -Property Name,Config.Option,Hardware,Runtime
     }
         
     if ($global:DefaultVIServers.RefCount -ne "1") {
@@ -56,11 +56,12 @@ function Get-PCPU-UsedUtil-Ratio {
     $numberOfSamples = $numberOfMinutes * 3
 
     # ignore avg. PCPU utilization < XX %
-    $minPcpuUtilPct = 10
+    # will be adjusted depending on ESXi Power Policy if in effect ... or maybe not, check back with Tim whether CPU Load Default translates to util, 60% for Balanced and 90 % for Low Power, seems a tad high
+    $minPcpuUtilPct = 0
 
-    ## maybe start with a target ratio and deduct based on circumstances
     # target used / util ratio, assuming no turbo boost
-    # $targetRatio = 1
+    # should be 1, if not I might have changed it for testing and not reverted, uhps 
+    $targetUsedUtilRatioDefault = 1
   
     $allResults = @()
     foreach ($esxiHost in $esxiHosts | Sort-Object -Property Name) {
@@ -70,89 +71,155 @@ function Get-PCPU-UsedUtil-Ratio {
         $esxiHostName = $esxiHost.Name
         $esxiHostConnectionState = $esxiHost.Runtime.ConnectionState
 
-        Write-Verbose "$esxiHostConnectionState"
-
-        $actualRatio = "N/A"
+        Write-Verbose "Connection: $esxiHostConnectionState"
+        
+        $actualUsedUtilRatio = "N/A"
         $freqScalingDetected = "N/A"
 
         $vmsPoweredOn = Get-View -ViewType "VirtualMachine" -Property Name,Config.Hardware -Filter @{"Runtime.PowerState"="PoweredOn"} -SearchRoot $($esxiHost).MoRef
         $numberOfVmsPoweredOn = $vmsPoweredOn.count
 
+        $targetUsedUtilRatio = $targetUsedUtilRatioDefault
+
+        Write-Verbose "# VMs: $numberOfVmsPoweredOn"
+
         if ($esxiHostConnectionState -eq "connected" -and $numberOfVmsPoweredOn -ge 1){
+            
             # not sure I'm going to use that but it should probably be the upper limit for PCPU consideration for non HCI
             $numberOfVcpusPoweredOn = ($vmsPoweredOn.Config.Hardware.NumCPU | Measure-Object -Sum).Sum
-            # maybe use $esxiHost.Hardware.CpuPkg and ThreadId instead of "manually" grouping the sockets
+            
             $pSockets = $esxiHost.Hardware.CpuInfo.NumCpuPackages
             $pCores = $esxiHost.Hardware.CpuInfo.NumCpuCores
             $pThreads = $esxiHost.Hardware.CpuInfo.NumCpuThreads
+            $cpuTopology = "$pSockets/$pCores/$pThreads"
            
-            $queryStats = 'cpu.utilization.average','cpu.usage.average'
-            $esxiHostObject = Get-VMHost -Name $esxiHost.Name
+            # get ESXi visible PM tech and make assumptions about BIOS policy
+            $esxiPowerPolicy = $esxiHost.Hardware.CpuPowerManagementInfo.CurrentPolicy
+            $esxiPowerAcpiP = ($esxiHost.Hardware.CpuPowerManagementInfo.HardwareSupport -like "*P-states*")
+            $esxiPowerAcpiC = ($esxiHost.Hardware.CpuPowerManagementInfo.HardwareSupport -like "*C-states*")
             
+            # todo: if this is ever extended, build the comments from simple blocks to avoid repetition and maybe create a report 
+            if ($esxiPowerAcpiP -and $esxiPowerAcpiC){
+                $biosPowerPolicySuspected = "Custom / Recommended"
+                $biosPowerPolicyComment = "P and deep C-States are visible to ESXi. Make sure that all other non-OS visible settings are configured as they would in your target policy (e.g. BIOS Max. Performance). Note that visible P-States doesn't mean that ESXi is allowed to control all nor that the CPU isn't frequency scaled by other means."
+            } elseif ($esxiPowerAcpiP) {
+                $biosPowerPolicySuspected = "OS controlled"
+                $biosPowerPolicyComment = "Only P-States are visible to ESXi, this is most likely a misunderstanding of configuring `"OS Control`". Make sure to present deep C-States when optimizing for maximum Turbo Boost / performance / manageability. Note that visible P-States doesn't mean that ESXi is allowed to control all nor that the CPU isn't frequency scaled by other means."
+            } elseif ($esxiPowerAcpiC) {
+                $biosPowerPolicySuspected = "Dynamic / Low"
+                $biosPowerPolicyComment = "ESXi is presented deep C-States but not P-State control, that is usually the default for BIOS Low or Dynamic policies which also frequency scale the CPU via BIOS controlled P-States. Note that non-visible `"legacy`" P-States could also be due to `"Hardware-Controlled Performance States (HWP)`"."
+            } else{
+                $biosPowerPolicySuspected = "Max. Performance"
+                $biosPowerPolicyComment = "No P nor deep C-States visible to ESXi, this is usually the default for BIOS Max / High Performance policies. Make sure to present deep C-States when optimizing for maximum Turbo Boost / performance / manageability. Note that non-visible `"legacy`" P-States could also be due to `"Hardware-Controlled Performance States (HWP)`"."
+            }
+
+            Write-Verbose "Comment on suspected BIOS Policy: $biosPowerPolicyComment"
+
+            # just if I'm ever bored, check the impact of having config.option in the original get-view properties since Custom policies are massively rare
+            if ($esxiPowerPolicy = "Custom"){
+                $esxiPowerOptions = $esxiHost.Config.Option | Where-Object {$_.Key -match "^Power*"}
+                # TODO a bunch fo stuff to max limit the ratio to MaxFreqPct and check MinFreqPct as the lowest watermark, maybe set minPcpuUtilPct to MaxCpuLoad ... WRT to that, I should do some sort of a modifier since MaxCpuLoad is used on a vastly smaller scale and I'm looking at at least 20 second samples ... so maybe divide by 20 at least? Na, that would move us to close to error margin territory... 
+            }
+
+            # stats stuff, I'm pretty sure you need the full vmhost object here ... but it's late, TODO another time
+            $esxiHostObject = Get-VMHost -Name $esxiHost.Name
+            $queryStats = 'cpu.utilization.average','cpu.usage.average'
             $perPcpuStats = Get-Stat -Entity $esxiHostObject -MaxSamples $numberOfSamples -Realtime -Stat $queryStats |
              Select-Object MetricId,Value,Instance |
              Where-Object {$_.Instance -ne ""} | 
              Group-Object -Property Instance | ForEach-Object {
+
+                $localPcpu = $_.Name
+                $Package = ($esxiHost.Hardware.CpuPkg | Where-Object {$_.ThreadId -contains $localPcpu}).Index
                 $Usage = ($_.Group | Where-Object {$_.MetricId -eq 'cpu.usage.average'} | Measure-Object -Property Value -Average).Average
                 $Util = ($_.Group | Where-Object {$_.MetricId -eq 'cpu.utilization.average'} | Measure-Object -Property Value -Average).Average
+                
                 New-Object PSObject -Property ([ordered]@{
                     PCPU = $_.Name
+                    Package = $Package
                     Usage = [Math]::Round($Usage,1)
                     Util = [Math]::Round($Util,1)
                     Ratio = [Math]::Round($Usage / $Util,2)
                 }) 
-            }
+            } | Sort-Object {[int]$_.PCPU}
+
+            # let's already only consider the min util from here on, what if there is not a single PCPU above it?
+            $perPcpuStats = $perPcpuStats | Where-Object {$_.Util -gt $minPcpuUtilPct} 
             
-            # $perPcpuStats | Sort-Object {[int]$_.PCPU}
-            #
-            # TODO - pretty much half of the description ...
-            #
+            if ($PerSocket -and $perPcpuStats) {
+                $perPackageStats = $perPcpuStats | Group-Object -Property Package | ForEach-Object {
 
-            if ($PerSocket) {
-                # just set the ratio of the affected socket(s), affected calc is the same
-                Write-Error "Check back in a few days, not implemented yet"
-                break
+                    $Usage = ($_.Group.Usage | Measure-Object -Average).Average
+                    $Util = ($_.Group.Util | Measure-Object -Average).Average
+                    $Ratio = ($_.Group.Ratio | Measure-Object -Average).Average
+
+                    New-Object PSObject -Property ([ordered]@{
+                        Package = $_.Name
+                        Usage = [Math]::Round($Usage,1)
+                        Util = [Math]::Round($Util,1)
+                        Ratio = [Math]::Round($Ratio,2)
+                    }) 
+                }
+                # get only one Ratio from the socket with the lowest ratio
+                $actualUsedUtilRatio = $perPackageStats.Ratio | Sort-Object -Ascending | Select-Object -First 1
             } else {
-                $hostStats = $perPcpuStats
+                $actualUsedUtilRatio = [Math]::Round(($perPcpuStats | Measure-Object -Property Ratio -Average).Average, 2)
             }
+            Write-Verbose "Used / Util Ratio: $actualUsedUtilRatio"
 
-            # don't forget to check MaxFreqPct for custom ESXi policy
+            # check MaxFreqPct for custom ESXi policy once you figure out 
             if ($pCores / $pThreads -ne 1) {
                 $smt = $true
-                $targetRatio = 0.5
-                # calculate htused based on 100 * cores < sum of util
+                $maxNonHtUtil = $pCores * 100 
+                # don't forget to / pSockets for perSockets
+                # maybe get coreutil from stats?
+                $targetUsedUtilRatio = $targetUsedUtilRatio / 2
+                # should I worry about the order of targetUsedUtilRatio deductions?
             } else {
                 $smt = $false
-                $targetRatio = 0.8
+                $targetUsedUtilRatio = 0.8
             }
 
             $freqScalingDetected = $false
-            $actualRatio = [Math]::Round(($hostStats | Where-Object {$_.Util -ge $minPcpuUtilPct} | Measure-Object -Property Ratio -Average).Average, 2)
-            Write-Verbose "Used / Util Ratio: $actualRatio"
-                        
-            if ($actualRatio -eq 0) {
-                $freqScalingDetected = "N/A, utilization < minPcpuUtilPct"
-            } elseif ($actualRatio -lt $targetRatio) {
+     
+            if ($actualUsedUtilRatio -eq 0) {
+                $freqScalingDetected = "N/A (Util < minPcpuUtilPct: $minPcpuUtilPct)"
+            } elseif ($actualUsedUtilRatio -lt $targetUsedUtilRatio) {
                 $freqScalingDetected = $true
             }
+
+            Write-Verbose "Freq. Scaled?: $freqScalingDetected"
         }
+
         $currentResults = [pscustomobject] @{
             "Host" = $esxiHostName
+            "Sockets/Cores/Threads" = $cpuTopology
+            "ESXi Policy" = $esxiPowerPolicy
+            "P-States" = $esxiPowerAcpiP
+            "deep C-States" = $esxiPowerAcpiC
+            "Suspected BIOS Policy" = $biosPowerPolicySuspected
+            # VMs an vCPUs of the whole host, even with -PerSocket
             "#VMs" = $numberOfVmsPoweredOn
-            "Ratio" = $actualRatio
+            "#vCPUs" = $numberOfVcpusPoweredOn
+            # Ratio of the largest 
+            "Ratio" = $actualUsedUtilRatio
+            "Target Ratio" = $targetUsedUtilRatio
             "Down-Scaled" = $freqScalingDetected
-        }
-        if ($listAll -or $freqScalingDetected) {
+        } 
+
+        if ($listAll -or ($freqScalingDetected -NotLike "N/A*" -and $freqScalingDetected -ne $false)) {
             $allResults += $currentResults
         } 
         Write-Verbose "Host End: $esxiHostName"
     }        
     Write-Verbose "Loop End"
     if ($allResults) {
-        $allResults | Format-Table -AutoSize
-        $allResults | Export-Csv -Path $localFolder$csvExportFilename -NoTypeInformation
-        Write-Host "Results of run written to: $localFolder$csvExportFilename"
+        $allResults | Format-Table -Property * -AutoSize
+        # $allResults | Export-Csv -Path $localFolder$csvExportFilename -NoTypeInformation
+        # Write-Host "Results of run written to: $localFolder$csvExportFilename"
     } else {
-        Write-Verbose "Nothing ... "
+        Write-Output "No hosts with severe frequency scaling or enough load to make prediction found. Try running with `"-ListAll`"."
     }
 }
+
+Get-PCPU-UsedUtil-Ratio
