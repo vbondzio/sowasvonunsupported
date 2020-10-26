@@ -57,7 +57,7 @@ function Get-PCPU-UsedUtil-Ratio {
 
     # ignore avg. PCPU utilization < XX %
     # will be adjusted depending on ESXi Power Policy if in effect ... or maybe not, check back with Tim whether CPU Load Default translates to util, 60% for Balanced and 90 % for Low Power, seems a tad high
-    $minPcpuUtilPct = 0
+    $minPcpuUtilPct = 10
 
     # target used / util ratio, assuming no turbo boost
     # should be 1, if not I might have changed it for testing and not reverted, uhps 
@@ -201,7 +201,7 @@ function Get-PCPU-UsedUtil-Ratio {
             # VMs an vCPUs of the whole host, even with -PerSocket
             "#VMs" = $numberOfVmsPoweredOn
             "#vCPUs" = $numberOfVcpusPoweredOn
-            # Ratio of the largest 
+            # lowest ratio of all sockets with -PerSocket
             "Ratio" = $actualUsedUtilRatio
             "Target Ratio" = $targetUsedUtilRatio
             "Down-Scaled" = $freqScalingDetected
@@ -215,8 +215,8 @@ function Get-PCPU-UsedUtil-Ratio {
     Write-Verbose "Loop End"
     if ($allResults) {
         $allResults | Format-Table -Property * -AutoSize
-        # $allResults | Export-Csv -Path $localFolder$csvExportFilename -NoTypeInformation
-        # Write-Host "Results of run written to: $localFolder$csvExportFilename"
+        $allResults | Export-Csv -Path $localFolder$csvExportFilename -NoTypeInformation
+        Write-Host "Results of run written to: $localFolder$csvExportFilename"
     } else {
         Write-Output "No hosts with severe frequency scaling or enough load to make prediction found. Try running with `"-ListAll`"."
     }
