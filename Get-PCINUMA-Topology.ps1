@@ -42,13 +42,15 @@ function Get-PCINUMA-Topology {
     }
 
     # right now only works against a host, not via vCenter (PR 2486858)
+    # todo: fixed with vCenter 7.0 U1
     Connect-VIServer -Server $HostName -User $user -Password $password | Out-Null
 
     $esxiVersion = ($global:DefaultVIServers).Version
     $hostOrvCenter = ($global:DefaultVIServers).ProductLine
     $numberOfConnections = ($global:DefaultVIServers).count
 
-    if ($esxiVersion -ne "6.7.0" -or $hostOrvCenter -ne "embeddedEsx" -or $numberOfConnections -ne "1") {
+    # todo: change to allow vCenter 7.0 U1
+    if ($esxiVersion -ne "6.7.0" -or $esxiVersion -ne "7.0.0" $hostOrvCenter -ne "embeddedEsx" -or $numberOfConnections -ne "1") {
         Write-Error -Message "Not connected _directly_ and _only_ to an 6.7+ ESXi host"
         Disconnect-VIServer -Server $esxiHostFqdn -Confirm:$false
         break
