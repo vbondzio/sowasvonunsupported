@@ -12,20 +12,31 @@ pshareString65="s/   Current count of guest large page mappings:\([0-9]\+\)$/\1/
 pshareString67="s/   Current number of 2MB page mappings:\([0-9]\+\)$/\1/p"
 
 case $version in
-        "650")  pshareString=${pshareString65};;
-        "670")  pshareString=${pshareString67};;
+	"650")  
+		pshareString=${pshareString65}
+		;;
+	"670")  
+		pshareString=${pshareString67}
+		;;
+	"70"[0-2])  
+		pshareString=${pshareString67}
+		;;
+	*)
+		echo "ESXi version $esxiVersion not tested."
+		exit 1
 esac
 
 printf "\n%+9s     %-40s\n" "Shareable" "VM Name"
 echo -e "-----------------------------------------------------"
 for vm in $(vsish -e ls /vm/)
-        do vmid=$(echo ${vm} | cut -d / -f -1)
-        currentLargePages=$(vsish -e get /memory/lpage/vmLPage/${vmid} | sed -n "${pshareString}")
-        vmname=$(vsish -e get /vm/${vm}vmmGroupInfo | sed -n 's/   display name:\(.*\)$/\1/p')
-        shareablePct=$(vsish -e get /vm/${vm}alloc/pshare | sed -n 's/^   pct shareable.*:\([0-9]\+\)$/\1/p')
-        shareableMb=$(awk "BEGIN {print ${currentLargePages} * 2 * ${shareablePct} / 10000}")
-        shareableMbTotal=$(awk "BEGIN {print ${shareableMbTotal} + ${shareableMb}}")
-        printf "%9.0f MB  %-40s\n" "${shareableMb}" "${vmname}"
+do 
+	vmid=$(echo ${vm} | cut -d / -f -1)
+	currentLargePages=$(vsish -e get /memory/lpage/vmLPage/${vmid} | sed -n "${pshareString}")
+	vmname=$(vsish -e get /vm/${vm}vmmGroupInfo | sed -n 's/   display name:\(.*\)$/\1/p')
+	shareablePct=$(vsish -e get /vm/${vm}alloc/pshare | sed -n 's/^   pct shareable.*:\([0-9]\+\)$/\1/p')
+	shareableMb=$(awk "BEGIN {print ${currentLargePages} * 2 * ${shareablePct} / 10000}")
+	shareableMbTotal=$(awk "BEGIN {print ${shareableMbTotal} + ${shareableMb}}")
+	printf "%9.0f MB  %-40s\n" "${shareableMb}" "${vmname}"
 done
 echo -e "-----------------------------------------------------"
 printf "%9.0f MB  %-40s\n\n" "${shareableMbTotal}" "Total"
