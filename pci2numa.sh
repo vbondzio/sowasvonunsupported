@@ -1,5 +1,5 @@
 #!/bin/sh
-# https://github.com/vbondzio/sowasvonunsupported/blob/master/pstates_disabled_check.sh
+# https://github.com/vbondzio/sowasvonunsupported/blob/master/pci2numa.sh
 # lists the NUMA node and connected PCI devices, | egrep "\[vm" for named vmk devices
 
 # added in 6.7
