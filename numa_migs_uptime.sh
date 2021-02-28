@@ -1,5 +1,5 @@
 #!/bin/sh
-# https://github.com/vbondzio/sowasvonunsupported/blob/master/numa_migs.sh
+# https://github.com/vbondzio/sowasvonunsupported/blob/master/numa_migs_uptime.sh
 # numa migrations over absolute uptime, also includes locality swap which is missing in "sched-stats -t numa-migration"
 # really more of a hint since absolute migrations since invocation tells you nothing over long periods of time
 # use numa_migs_diff.sh for checking recent / ongoing migrations
