@@ -16,6 +16,12 @@ do
 	vmname=$(vsish -e get /world/${vcpulead}/name | cut -d : -f 2-)
 	uptime=$(vsish -e get /sched/Vcpus/${vcpulead}/stats/stateTimes | sed -n 's/^   uptime:\([0-9]\+\).\{6\} usec $/\1/p')
 	
+	uptimeHour=$(( ${uptime} / 3600 ))
+	if [ $uptimeHour = 0 ]
+	then
+		uptimeHour=1
+	fi
+	
 	echo -e "CID=${cartel%%/}\tGID=${group}\tLWID=${vcpulead}\tName=${vmname%%/}\tUptime(hours)=$(( ${uptime} / 3600 ))\n"
 
 	printf "%+9s %+9s %-40s\n" "absolute" "per hour" "type"
@@ -26,10 +32,10 @@ do
 	do
 		migrationType=$(echo ${migrations} | cut -d : -f 1)
 		migrationAmount=$(echo ${migrations} | cut -d : -f 2)
-		printf "%+9s %+9s %-40s\n" "${migrationAmount}" "$(( ${migrationAmount} / (${uptime} / 3600) ))" "${migrationType}"
+		printf "%+9s %+9s %-40s\n" "${migrationAmount}" "$(( ${migrationAmount} / ${uptimeHour} ))" "${migrationType}"
 		migrationTotal=$(( ${migrationTotal} + ${migrationAmount} ))
 	done
 	
 	echo -e "--------------------------------------------"
-	printf "%+9s %+9s %-40s\n\n\n" "${migrationTotal}" "$(( ${migrationTotal} / (${uptime} / 3600) ))" "Total"
+	printf "%+9s %+9s %-40s\n\n\n" "${migrationTotal}" "$(( ${migrationTotal} / ${uptimeHour} ))" "Total"
 done
