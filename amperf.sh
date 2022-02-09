@@ -1,7 +1,7 @@
 #!/bin/sh
 # https://github.com/vbondzio/sowasvonunsupported/blob/master/amperf.sh
 # Prints avg. of core frequency per package in percent
-# call with "all" to list all PCPUs instead of averaging per package, defaults to per socket
+# call with "all" to list all PCPUs instead of averaging per package
 
 amperfSum=0
 amperfCount=0
