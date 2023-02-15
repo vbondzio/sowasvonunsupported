@@ -18,7 +18,7 @@ case $version in
 	"670")  
 		pshareString=${pshareString67}
 		;;
-	"70"[0-2])  
+	"70"[0-3])  
 		pshareString=${pshareString67}
 		;;
 	*)
