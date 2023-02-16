@@ -3,7 +3,7 @@ function Get-PowerManagementInfo {
     .SYNOPSIS
         List relevant information for BIOS and ESXi host power management 
     .DESCRIPTION
-        Checks all hosts under the vCenter or a specific one and gathers PCPU Usage and Utilization figures, approximate ratio per PCPU to identify non-ESXi controlled frequency scaling. Takes into account whether the BIOS presents (legacy) P-States, the ESXi policy and availability of SMT. It assumes a certain utilization minimum and will become less accurate the closer it is to that minimum. Stats over the last 15 minutes are used for the calculation.
+        Checks all hosts under the vCenter or a specific one and gathers PCPU Usage and Utilization figures, approximate ratio per PCPU to identify non-ESXi controlled frequency scaling. Takes into account whether the BIOS presents (legacy) P-States, the ESXi policy and availability of SMT. It assumes a certain utilization minimum and will become less accurate the closer it is to that minimum. Realtim stats over the last hour are used for the calculation.
         # note: at least thats the goal, it might not right now
     .NOTES
         Author:     Valentin
@@ -12,9 +12,9 @@ function Get-PowerManagementInfo {
     .PARAMETER EsxiHostName
         The host which will be checked. The function runs against all hosts in the vCenter if not specified. 
     .EXAMPLE
-        PS> Invoke-Rolling-Maintenance-Mode
+        PS> Get-PowerManagementInfo
     .EXAMPLE
-        PS> Invoke-Rolling-Maintenance-Mode -EsxiHostName "MyHost"
+        PS> Get-PowerManagementInfo -EsxiHostName "MyHost"
     #>
 
     param(
