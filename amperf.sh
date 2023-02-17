@@ -3,13 +3,13 @@
 # Prints avg. of core frequency per package in percent
 # call with "all" to list all PCPUs instead of averaging per package
 
-amperfSum=0
-amperfCount=0
-
 printf "%+8s  %+7s  %+6s\n" "Package" "PCPU" "AMPERF"
 
 for package in $(vsish -e ls /hardware/cpuTopology/package/nodes/)
-do 
+do
+    amperfSum=0
+    amperfCount=0
+    
 	pcpurange=$(vsish -e get /hardware/cpuTopology/package/nodes/${package} | sed -n 's/   pcpus:\([0-9-]\+\)$/\1/p')
 	pcpus=$(echo ${pcpurange} | sed 's/-/ /g')
 	for pcpu in $(seq ${pcpus})
