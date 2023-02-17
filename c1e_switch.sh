@@ -26,7 +26,7 @@ checkAllPcpusForPowerControlMsrValue () {
     if [ ${powerControlMsrUnique} != "1" ] 
     then
         echo -e "something is really wrong, call an adult!" >&2
-        fi
+    fi
 }
 
 checkC1eEnabled () {
