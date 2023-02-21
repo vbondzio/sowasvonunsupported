@@ -71,6 +71,10 @@ function Get-PowerManagementInfo {
         $hostUsage = "N/A"
         $hostUtil = "N/A"
         $hostCoreUtil = "N/A"
+        $hwVendor = "N/A"
+        $hwModel = "N/A"
+        $hwBiosVersion = "N/A"
+        $hwBiosDate = "N/A"
         
         # will not fail if host is disconnected funnily enough
         $vmsPoweredOn = Get-View -ViewType "VirtualMachine" -Property Name,Config.Hardware -Filter @{"Runtime.PowerState"="PoweredOn"} -SearchRoot $($esxiHost).MoRef
@@ -87,6 +91,10 @@ function Get-PowerManagementInfo {
             $pCores = $esxiHost.Hardware.CpuInfo.NumCpuCores
             $pThreads = $esxiHost.Hardware.CpuInfo.NumCpuThreads
             $cpuTopology = "$pSockets/$pCores/$pThreads"
+            $hwVendor = $esxiHost.Hardware.SystemInfo.Vendor
+            $hwModel = $esxiHost.Hardware.SystemInfo.Model
+            $hwBiosVersion = $esxiHost.Hardware.BiosInfo.BiosVersion
+            $hwBiosDate = $esxiHost.Hardware.BiosInfo.ReleaseDate
             
             # get ESXi visible PM tech and make assumptions about BIOS policy
             $esxiPowerPolicy = $esxiHost.Hardware.CpuPowerManagementInfo.CurrentPolicy
@@ -126,6 +134,10 @@ function Get-PowerManagementInfo {
 
         $currentResults = [pscustomobject] @{
             "Host" = $esxiHostName
+            "Vendor" = $hwVendor
+            "Model" = $hwModel
+            "BIOS ver." = $hwBiosVersion
+            "BIOS date" = $hwBiosDate
             "Sockets/Cores/Threads" = $cpuTopology
             "ESXi Policy" = $esxiPowerPolicy
             "P-States" = $esxiPowerAcpiP
