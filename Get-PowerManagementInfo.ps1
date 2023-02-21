@@ -59,8 +59,6 @@ function Get-PowerManagementInfo {
 
         Write-Verbose "Connection: $esxiHostConnectionState"
         
-        $actualUsedUtilRatio = "N/A"
-        $freqScalingDetected = "N/A"
         $cpuTopology = "N/A"
         $esxiPowerPolicy = "N/A"
         $esxiPowerAcpiP = "N/A"
