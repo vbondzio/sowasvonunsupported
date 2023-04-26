@@ -156,8 +156,8 @@ function Get-PowerManagementInfo {
     
     if ($allResults) {
         $allResults | Format-Table -Property * -AutoSize
-        #$allResults | Export-Csv -Path $localFolder$csvExportFilename -NoTypeInformation
-        #Write-Output "Results of run written to: $localFolder$csvExportFilename"
+        $allResults | Export-Csv -Path $localFolder$csvExportFilename -NoTypeInformation
+        Write-Output "Results of run written to: $localFolder$csvExportFilename"
     } else {
         Write-Output "Nothing to report (no hosts or other issue, change to verbose logging)."
     }
