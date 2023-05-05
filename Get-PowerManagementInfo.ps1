@@ -88,7 +88,6 @@ function Get-PowerManagementInfo {
             $pSockets = $esxiHost.Hardware.CpuInfo.NumCpuPackages
             $pCores = $esxiHost.Hardware.CpuInfo.NumCpuCores
             $pThreads = $esxiHost.Hardware.CpuInfo.NumCpuThreads
-            $cpuTopology = "$pSockets/$pCores/$pThreads"
             $hwVendor = $esxiHost.Hardware.SystemInfo.Vendor
             $hwModel = $esxiHost.Hardware.SystemInfo.Model
             $hwBiosVersion = $esxiHost.Hardware.BiosInfo.BiosVersion
@@ -117,7 +116,7 @@ function Get-PowerManagementInfo {
             Write-Verbose "Comment on suspected BIOS Policy: $biosPowerPolicyComment"
 
             $esxiHostObject = Get-VMHost -Name $esxiHost.Name
-            $queryStats = 'cpu.utilization.average','cpu.usage.average','cpu.coreutilization.average'
+            $queryStats = 'cpu.utilization.average','cpu.usage.average','cpu.coreutilization.average','power.power.average'
             $perHostStats = Get-Stat -Entity $esxiHostObject -MaxSamples $numberOfSamples -Realtime -Stat $queryStats |
                 Where-Object {$_.Instance -eq ""} |
                 Select-Object -Property MetricId,Value | 
@@ -126,7 +125,8 @@ function Get-PowerManagementInfo {
             $hostUsage = ($perHostStats.Group | Where-Object {$_.MetricId -eq 'cpu.usage.average'} | Measure-Object -Property Value -Average).Average
             $hostUtil = ($perHostStats.Group | Where-Object {$_.MetricId -eq 'cpu.utilization.average'} | Measure-Object -Property Value -Average).Average
             $hostCoreUtil = ($perHostStats.Group | Where-Object {$_.MetricId -eq 'cpu.coreutilization.average'} | Measure-Object -Property Value -Average).Average
-          
+            $hostPower = ($perHostStats.Group | Where-Object {$_.MetricId -eq 'power.power.average'} | Measure-Object -Property Value -Average).Average
+
             Write-Verbose "$perHostStats"
         }
 
@@ -136,14 +136,17 @@ function Get-PowerManagementInfo {
             "Model" = $hwModel
             "BIOS ver." = $hwBiosVersion
             "BIOS date" = $hwBiosDate
-            "Sockets/Cores/Threads" = $cpuTopology
+            "Sockets" = $pSockets
+            "Cores" = $pCores
+            "Threads" = $pThreads
             "ESXi Policy" = $esxiPowerPolicy
             "P-States" = $esxiPowerAcpiP
             "deep C-States" = $esxiPowerAcpiC
             "Suspected BIOS Policy" = $biosPowerPolicySuspected
-            "Used" = [Math]::Round($hostUsage,1)
-            "Util" = [Math]::Round($hostUtil,1)
-            "CoreUtil" = [Math]::Round($hostCoreUtil,1)
+            "Used(%)" = [Math]::Round($hostUsage,1)
+            "Util(%)" = [Math]::Round($hostUtil,1)
+            "CoreUtil(%)" = [Math]::Round($hostCoreUtil,1)
+            "Power(W)" = [Math]::Round($hostPower,1)
             "#VMs" = $numberOfVmsPoweredOn
             "#vCPUs" = $numberOfVcpusPoweredOn            
         } 
@@ -156,8 +159,8 @@ function Get-PowerManagementInfo {
     
     if ($allResults) {
         $allResults | Format-Table -Property * -AutoSize
-        $allResults | Export-Csv -Path $localFolder$csvExportFilename -NoTypeInformation
-        Write-Output "Results of run written to: $localFolder$csvExportFilename"
+        #$allResults | Export-Csv -Path $localFolder$csvExportFilename -NoTypeInformation
+        #Write-Output "Results of run written to: $localFolder$csvExportFilename"
     } else {
         Write-Output "Nothing to report (no hosts or other issue, change to verbose logging)."
     }
