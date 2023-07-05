@@ -22,8 +22,9 @@ case $version in
 		pshareString=${pshareString67}
 		;;
 	*)
-		echo "ESXi version $esxiVersion not tested."
-		exit 1
+                pshareString=${pshareString67}
+                echo "ESXi version $version not tested."
+                ;;
 esac
 
 printf "\n%+9s     %-40s\n" "Shareable" "VM Name"
