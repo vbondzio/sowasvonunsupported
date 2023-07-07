@@ -102,8 +102,8 @@ Function Get-EsxtopPowerMetrics {
     )
 
     $esxtopFull = Get-VMHost -Name $EsxiHostName | Get-EsxtopAPI -simpleCommand FetchStats
-    # don't ask me why that findstr is necessary
-    $esxtopMatch = $esxtopFull | findstr LCPUPower | Select-String "LCPUPower.[0-9]+"
+    # don't ask me why that findstr is necessary, edit: ugh ...
+    $esxtopMatch = $esxtopFull -split "`n" | Select-String "LCPUPower.[0-9]+"
 
     $allPCPUs = @()
     foreach ($line in $esxtopMatch.line){
