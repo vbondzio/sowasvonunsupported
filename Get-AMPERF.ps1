@@ -51,6 +51,7 @@ function Get-AMPERF {
     foreach ($esxiHost in $esxiHosts | Sort-Object -Property Name) {
         
         $esxtopSnapshot0 = Get-EsxtopPowerMetrics -EsxiHostName $esxiHost
+        Start-Sleep = 1 
         $esxtopSnapshot1 = Get-EsxtopPowerMetrics -EsxiHostName $esxiHost
 
         foreach ($pCPU in $esxtopSnapshot1.PCPU) {
@@ -65,7 +66,7 @@ function Get-AMPERF {
             $currentResults = [pscustomobject] @{
                     "Host" = $esxiHost
                     "PCPU" = $pCPU
-                    "A/MPERF%" = $amperfPct
+                    "A/MPERF%" = [Math]::Round($amperfPct,1)
             }
             $allResults += $currentResults
         }
