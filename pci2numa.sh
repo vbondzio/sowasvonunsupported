@@ -11,6 +11,7 @@ then
         exit 0
 fi
 
+echo "NUMA    PCIe ADDRESS   DESCRIPTION"
 lspci=$(lspci)
 for bus in $(vsish -e ls /hardware/pci/seg/0/bus/)
 do
@@ -27,10 +28,10 @@ do
         description=$(echo "${lspci}" | grep "0000:${xbus}:${xslot}.${func%?}" | cut -d " " -f 2-)
         if [ "$1" == "all" ]
         then
-                echo ${numaAssignedDevice} - ${description}
+                echo " ${numaAssignedDevice}    |  0000:${xbus}:${xslot}  | ${description}"
         # for some reason, a simple elif [ var = *"string"* ] doesn't work in busybox shell ...
         else
-                echo ${numaAssignedDevice} - ${description} | egrep "\[vm[a-z0-9]+\]"
+                echo " ${numaAssignedDevice}    |  0000:${xbus}:${xslot}  | ${description}" | egrep "\[vm[a-z0-9]+\]"
         fi
       fi
     done
